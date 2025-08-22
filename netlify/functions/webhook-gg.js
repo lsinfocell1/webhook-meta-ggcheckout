@@ -1,124 +1,122 @@
-// netlify/functions/webhook-gg.js
 const crypto = require('crypto');
 
 exports.handler = async (event, context) => {
-  // Apenas POST é permitido
-  if (event.httpMethod !== 'POST') {
-    return {
-      statusCode: 405,
-      body: JSON.stringify({ error: 'Método não permitido' })
-    };
-  }
-
-  // Suas credenciais Meta
-  const PIXEL_ID = "1200923827459530";
-  const TOKEN = "EAALM996YCYEBPXWSgjIIgFPBn8sVgm8B7LSgw9jlp9WqpKZAq0uWuLqB51jPU0Ji7nZBy9y3XLXqZAGGdC4ifzEEZCZBJcY3vxX429B95Qbfsq5setZATxmVi7UcHhx0itmvZBoUZBLJksESxnRRkPQmr3TyhdghR5Fc9zrU25PuU9hepRIZA0ZAZCfBTQHzPirmWrUpvMwu1QVOZBMkUfGdloXyCvdo";
-
+  console.log('Dados recebidos:', JSON.parse(event.body));
+  
+  // Configurações do Meta Pixel
+  const PIXEL_ID = '1200923827459530';
+  const ACCESS_TOKEN = 'EAALM996YCYEBPXWSgjIIgFPBn8sVgm8B7LSgw9jlp9WqpKZAq0uWuLqB51jPU0Ji7nZBy9y3XLXqZAGGdC4ifzEEZCZBJcY3vxX429B95Qbfsq5setZATxmVi7UcHhx0itmvZBoUZBLJksESxnRRkPQmr3TyhdghR5Fc9zrU25PuU9hepRIZA0ZAZCfBTQHzPirmWrUpvMwu1QVOZBMkUfGdloXyCvdo';
+  
   try {
-    // Parse dos dados recebidos do GGCheckout
     const data = JSON.parse(event.body);
     
-    console.log('Dados recebidos:', data);
-
-    // Validação básica
-    if (!data.customer || !data.order) {
+    // Verificar se é um evento válido (não apenas teste)
+    if (data.event === 'test') {
+      console.log('Evento de teste recebido - não enviando para Meta');
       return {
-        statusCode: 400,
-        body: JSON.stringify({ 
-          error: 'Dados inválidos',
-          received: data 
+        statusCode: 200,
+        body: JSON.stringify({
+          message: 'Evento de teste recebido com sucesso',
+          timestamp: new Date().toISOString()
         })
       };
     }
-
-    // Extrai informações
-    const customerEmail = data.customer.email || '';
-    const customerPhone = data.customer.phone || '';
-    const orderAmount = parseFloat(data.order.amount || 0);
-    const productName = data.product?.name || 'Produto';
-    const orderId = data.order.id || '';
-
-    // Prepara dados do usuário (hash para privacidade)
-    const userData = {};
     
-    if (customerEmail) {
-      userData.em = [crypto.createHash('sha256').update(customerEmail.toLowerCase().trim()).digest('hex')];
-    }
-    
-    if (customerPhone) {
-      const cleanPhone = customerPhone.replace(/\D/g, '');
-      userData.ph = [crypto.createHash('sha256').update(cleanPhone).digest('hex')];
-    }
-
-    // Monta evento para Meta API
-    const eventData = {
-      data: [{
-        event_name: "Purchase",
-        event_time: Math.floor(Date.now() / 1000),
-        action_source: "website",
-        event_source_url: "https://checkout.ggcheckout.com",
-        user_data: userData,
-        custom_data: {
-          currency: "BRL",
-          value: orderAmount,
-          content_type: "product",
-          content_name: productName,
-          order_id: orderId
-        }
-      }],
-      test_event_code: "TEST12345" // Remova quando for para produção
-    };
-
-    console.log('Enviando para Meta:', eventData);
-
-    // Envia para Meta API de Conversões
-    const metaResponse = await fetch(`https://graph.facebook.com/v18.0/${PIXEL_ID}/events?access_token=${TOKEN}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'GGCheckout-Netlify-Webhook/1.0'
-      },
-      body: JSON.stringify(eventData)
-    });
-
-    const responseData = await metaResponse.json();
-    
-    console.log('Resposta da Meta:', responseData);
-
-    if (metaResponse.ok) {
-      return {
-        statusCode: 200,
+    // Verificar se o pagamento foi confirmado/aprovado
+    if (data.payment && data.payment.status === 'approved') {
+      console.log('Pagamento aprovado - enviando Purchase para Meta');
+      
+      // Preparar dados para o Meta
+      const eventTime = Math.floor(Date.now() / 1000);
+      
+      // Hash do email e telefone (obrigatório para o Meta)
+      const hashedEmail = data.customer.email 
+        ? crypto.createHash('sha256').update(data.customer.email.toLowerCase()).digest('hex')
+        : null;
+      
+      const hashedPhone = data.customer.phone 
+        ? crypto.createHash('sha256').update(data.customer.phone.replace(/\D/g, '')).digest('hex')
+        : null;
+      
+      // Preparar produtos
+      const contents = data.products.map(product => ({
+        id: product.id,
+        quantity: product.quantity || 1,
+        item_price: product.price
+      }));
+      
+      // Evento Purchase para o Meta
+      const purchaseEvent = {
+        data: [{
+          event_name: 'Purchase',
+          event_time: eventTime,
+          action_source: 'website',
+          user_data: {
+            ...(hashedEmail && { em: [hashedEmail] }),
+            ...(hashedPhone && { ph: [hashedPhone] })
+          },
+          custom_data: {
+            currency: 'BRL',
+            value: data.payment.amount,
+            contents: contents,
+            content_type: 'product',
+            num_items: data.products.length
+          }
+        }]
+      };
+      
+      // Enviar para o Meta
+      const response = await fetch(`https://graph.facebook.com/v18.0/${PIXEL_ID}/events`, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          success: true,
-          message: "Evento enviado para Meta com sucesso",
-          meta_response: responseData,
-          event_data: {
-            customer_email: customerEmail,
-            order_amount: orderAmount,
-            product_name: productName
-          }
+          ...purchaseEvent,
+          access_token: ACCESS_TOKEN
         })
-      };
+      });
+      
+      const result = await response.json();
+      
+      if (response.ok) {
+        console.log('Evento enviado com sucesso para o Meta:', result);
+        return {
+          statusCode: 200,
+          body: JSON.stringify({
+            message: 'Purchase event enviado com sucesso para o Meta',
+            meta_response: result,
+            timestamp: new Date().toISOString()
+          })
+        };
+      } else {
+        console.error('Erro ao enviar para o Meta:', result);
+        return {
+          statusCode: 400,
+          body: JSON.stringify({
+            error: 'Erro ao enviar evento para o Meta',
+            meta_error: result
+          })
+        };
+      }
     } else {
+      console.log(`Status do pagamento: ${data.payment?.status} - não enviando evento`);
       return {
-        statusCode: 500,
+        statusCode: 200,
         body: JSON.stringify({
-          error: "Falha ao enviar para Meta",
-          meta_response: responseData
+          message: `Evento recebido mas não processado (status: ${data.payment?.status})`,
+          timestamp: new Date().toISOString()
         })
       };
     }
-
+    
   } catch (error) {
-    console.error('Erro:', error);
+    console.error('Erro no webhook:', error);
     return {
       statusCode: 500,
-      body: JSON.stringify({ 
+      body: JSON.stringify({
         error: 'Erro interno do servidor',
-        details: error.message 
+        details: error.message
       })
     };
   }
