@@ -22,9 +22,9 @@ exports.handler = async (event, context) => {
       };
     }
     
-    // Verificar se o pagamento foi confirmado/aprovado
-    if (data.payment && data.payment.status === 'approved') {
-      console.log('Pagamento aprovado - enviando Purchase para Meta');
+    // Verificar se é um evento de pagamento PIX pago
+    if (data.event === 'pix.paid' || (data.payment && (data.payment.status === 'approved' || data.payment.method === 'pix.paid'))) {
+      console.log('PIX pago - enviando Purchase para Meta');
       
       // Preparar dados para o Meta
       const eventTime = Math.floor(Date.now() / 1000);
@@ -38,12 +38,16 @@ exports.handler = async (event, context) => {
         ? crypto.createHash('sha256').update(data.customer.phone.replace(/\D/g, '')).digest('hex')
         : null;
       
-      // Preparar produtos
-      const contents = data.products.map(product => ({
+      // Preparar produtos - ajustado para estrutura do GGCheckout
+      const contents = data.products ? data.products.map(product => ({
         id: product.id,
         quantity: product.quantity || 1,
         item_price: product.price
-      }));
+      })) : [{
+        id: data.product.id,
+        quantity: 1,
+        item_price: data.payment.amount
+      }];
       
       // Evento Purchase para o Meta
       const purchaseEvent = {
@@ -60,7 +64,7 @@ exports.handler = async (event, context) => {
             value: data.payment.amount,
             contents: contents,
             content_type: 'product',
-            num_items: data.products.length
+            num_items: data.products ? data.products.length : 1
           }
         }]
       };
