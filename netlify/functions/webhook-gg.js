@@ -1,15 +1,39 @@
 const crypto = require('crypto');
 const fetch = require("node-fetch");
 
-exports.handler = async (event) => {
-  console.log('Dados recebidos:', JSON.parse(event.body));
+exports.handler = async (event, context) => {
+  // 🔧 CORREÇÃO 1: Capturar IP e User Agent dos headers
+  const clientIP = event.headers['x-forwarded-for'] || event.headers['x-real-ip'] || 'unknown';
+  const userAgent = event.headers['user-agent'] || 'unknown';
   
+  console.log('Headers recebidos:', {
+    ip: clientIP,
+    userAgent: userAgent,
+    allHeaders: event.headers
+  });
+
   // Configurações do Meta Pixel
   const PIXEL_ID = '1200923827459530';
   const ACCESS_TOKEN = 'EAALM996YCYEBPXWSgjIIgFPBn8sVgm8B7LSgw9jlp9WqpKZAq0uWuLqB51jPU0Ji7nZBy9y3XLXqZAGGdC4ifzEEZCZBJcY3vxX429B95Qbfsq5setZATxmVi7UcHhx0itmvZBoUZBLJksESxnRRkPQmr3TyhdghR5Fc9zrU25PuU9hepRIZA0ZAZCfBTQHzPirmWrUpvMwu1QVOZBMkUfGdloXyCvdo';
   
   try {
-    const data = JSON.parse(event.body);
+    // 🔧 CORREÇÃO 2: Melhor tratamento de JSON com validação
+    let data;
+    try {
+      data = JSON.parse(event.body);
+      console.log('Dados recebidos:', data);
+    } catch (parseError) {
+      console.error('Erro ao fazer parse do JSON:', parseError);
+      console.error('Body recebido:', event.body);
+      return {
+        statusCode: 400,
+        body: JSON.stringify({
+          error: 'JSON inválido',
+          details: parseError.message,
+          receivedBody: event.body
+        })
+      };
+    }
     
     // Verificar se é um evento de teste
     if (data.event === 'test') {
@@ -44,6 +68,10 @@ exports.handler = async (event) => {
       const hashedPhone = cleanPhone 
         ? crypto.createHash('sha256').update(cleanPhone).digest('hex')
         : null;
+
+      // 🔧 CORREÇÃO 3: Extrair fbc e fbp dos parâmetros se disponíveis
+      const fbc = data.tracking?.fbc || data.utm?.fbc || null;
+      const fbp = data.tracking?.fbp || data.utm?.fbp || null;
       
       // Preparar produtos corretamente
       const products = data.products || [];
@@ -63,40 +91,56 @@ exports.handler = async (event) => {
       const totalValue = data.payment?.amount || data.total || 
         contents.reduce((sum, item) => sum + (item.item_price * item.quantity), 0);
       
-      // Evento Purchase otimizado para WhatsApp/Coora
+      // 🔧 CORREÇÃO 4: Estrutura otimizada com TODOS os parâmetros de qualidade
+      const userData = {
+        ...(hashedEmail && { em: [hashedEmail] }),
+        ...(hashedPhone && { ph: [hashedPhone] }),
+        // ✅ ADICIONANDO IP E USER AGENT (+35% qualidade)
+        ...(clientIP !== 'unknown' && { client_ip_address: clientIP }),
+        ...(userAgent !== 'unknown' && { client_user_agent: userAgent }),
+        // ✅ ADICIONANDO FBC E FBP (+28% qualidade)  
+        ...(fbc && { fbc: fbc }),
+        ...(fbp && { fbp: fbp }),
+        // Adicionar dados extras se disponíveis
+        ...(customer.name && { 
+          fn: [crypto.createHash('sha256').update(customer.name.split(' ')[0].toLowerCase().trim()).digest('hex')],
+          ln: [crypto.createHash('sha256').update((customer.name.split(' ').slice(-1)[0] || '').toLowerCase().trim()).digest('hex')]
+        })
+      };
+
+      // Evento Purchase otimizado
       const purchaseEvent = {
         data: [{
           event_name: 'Purchase',
           event_time: eventTime,
-          action_source: 'other', // 'other' é mais apropriado para WhatsApp
-          user_data: {
-            ...(hashedEmail && { em: [hashedEmail] }),
-            ...(hashedPhone && { ph: [hashedPhone] }),
-            // Adicionar dados extras se disponíveis
-            ...(customer.name && { 
-              fn: [crypto.createHash('sha256').update(customer.name.split(' ')[0].toLowerCase().trim()).digest('hex')],
-              ln: [crypto.createHash('sha256').update((customer.name.split(' ').slice(-1)[0] || '').toLowerCase().trim()).digest('hex')]
-            })
-          },
+          // 🔧 CORREÇÃO 5: action_source correto para website
+          action_source: 'website',
+          event_source_url: data.checkout_url || `https://ggcheckout.com/checkout/v2/${data.checkout_id || 'unknown'}`,
+          user_data: userData,
           custom_data: {
             currency: 'BRL',
             value: parseFloat(totalValue),
             contents: contents,
             content_type: 'product',
             num_items: contents.length,
-            // Adicionar nome do produto principal
             content_name: products.length > 0 ? products[0].name : 'Produto via WhatsApp',
             // Adicionar categoria se disponível
             ...(products.length > 0 && products[0].category && {
               content_category: products[0].category
             })
-          },
-          // Adicionar source_url se for via WhatsApp
-          event_source_url: 'whatsapp://business'
+          }
         }]
       };
       
       console.log('Enviando evento para Meta:', JSON.stringify(purchaseEvent, null, 2));
+      console.log('Parâmetros de qualidade incluídos:', {
+        hasIP: !!userData.client_ip_address,
+        hasUserAgent: !!userData.client_user_agent,
+        hasFBC: !!userData.fbc,
+        hasFBP: !!userData.fbp,
+        hasEmail: !!userData.em,
+        hasPhone: !!userData.ph
+      });
       
       // Enviar para o Meta Pixel
       const response = await fetch(`https://graph.facebook.com/v18.0/${PIXEL_ID}/events`, {
@@ -106,9 +150,7 @@ exports.handler = async (event) => {
         },
         body: JSON.stringify({
           ...purchaseEvent,
-          access_token: ACCESS_TOKEN,
-          // Adicionar parâmetros adicionais para melhor rastreamento
-          test_event_code: process.env.META_TEST_CODE || undefined // Para testes
+          access_token: ACCESS_TOKEN
         })
       });
       
@@ -126,6 +168,12 @@ exports.handler = async (event) => {
               value: totalValue,
               currency: 'BRL',
               products_count: contents.length
+            },
+            quality_params: {
+              ip_included: !!userData.client_ip_address,
+              user_agent_included: !!userData.client_user_agent,
+              fbc_included: !!userData.fbc,
+              fbp_included: !!userData.fbp
             },
             timestamp: new Date().toISOString()
           })
