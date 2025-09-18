@@ -14,6 +14,16 @@ exports.handler = async (event, context) => {
   const PIXEL_ID = '1200923827459530';
   const ACCESS_TOKEN = 'EAALM996YCYEBPXWSgjIIgFPBn8sVgm8B7LSgw9jlp9WqpKZAq0uWuLqB51jPU0Ji7nZBy9y3XLXqZAGGdC4ifzEEZCZBJcY3vxX429B95Qbfsq5setZATxmVi7UcHhx0itmvZBoUZBLJksESxnRRkPQmr3TyhdghR5Fc9zrU25PuU9hepRIZA0ZAZCfBTQHzPirmWrUpvMwu1QVOZBMkUfGdloXyCvdo';
   
+  // 🚀 CONFIGURAÇÃO DOS VALORES DOS PRODUTOS
+  const produtoValores = {
+    'PLAYLIST ATUALIZADA': 9.90,
+    'MÚSICAS E CLIPES': 9.90,
+    'CD ATUALIZADO SETEMBRO': 14.90,
+    'PACOTE COMPLETO SETEMBRO COM DESCONTO': 14.90,
+    'PACOTE COMPLETO ATUALIZADO SETEMBRO': 19.90
+    // PEN DRIVE não incluído (não vai para Meta)
+  };
+  
   try {
     let data;
     try {
@@ -74,22 +84,46 @@ exports.handler = async (event, context) => {
       // 🚀 MELHORIA 3: Adicionar external_id único para cada compra
       const externalId = data.payment?.id || data.checkout_id || `purchase_${eventTime}`;
       
-      // Preparar produtos
+      // 🚀 NOVA FUNCIONALIDADE: Preparar produtos com valores corretos
       const products = data.products || [];
-      const contents = products.length > 0 
-        ? products.map(product => ({
+      let contents;
+      let totalValue;
+      
+      if (products.length > 0) {
+        // Processar múltiplos produtos
+        contents = products.map(product => {
+          const productName = product.name || product.title || 'unknown';
+          const valorCorreto = produtoValores[productName];
+          
+          console.log(`📦 Produto: ${productName} - Valor original: ${product.price} - Valor correto: ${valorCorreto}`);
+          
+          return {
             id: product.id?.toString() || 'unknown',
             quantity: parseInt(product.quantity) || 1,
-            item_price: parseFloat(product.price) || 0
-          }))
-        : [{
-            id: data.product?.id?.toString() || 'single_product',
-            quantity: 1,
-            item_price: parseFloat(data.payment?.amount) || parseFloat(data.total) || 0
-          }];
+            item_price: valorCorreto || parseFloat(product.price) || 0
+          };
+        });
+        
+        // Calcular valor total baseado nos valores corretos
+        totalValue = contents.reduce((sum, item) => sum + (item.item_price * item.quantity), 0);
+        
+      } else {
+        // Produto único - tentar identificar pelo nome ou usar valor padrão
+        const productName = data.product?.name || data.product?.title || 'unknown';
+        const valorCorreto = produtoValores[productName];
+        
+        console.log(`📦 Produto único: ${productName} - Valor original: ${data.payment?.amount} - Valor correto: ${valorCorreto}`);
+        
+        contents = [{
+          id: data.product?.id?.toString() || 'single_product',
+          quantity: 1,
+          item_price: valorCorreto || parseFloat(data.payment?.amount) || parseFloat(data.total) || 0
+        }];
+        
+        totalValue = contents[0].item_price;
+      }
       
-      const totalValue = data.payment?.amount || data.total || 
-        contents.reduce((sum, item) => sum + (item.item_price * item.quantity), 0);
+      console.log(`💰 Valor total calculado: ${totalValue} (produtos: ${contents.length})`);
       
       // 🚀 MELHORIA 4: userData otimizado com todos os campos possíveis
       const userData = {
@@ -152,6 +186,8 @@ exports.handler = async (event, context) => {
         hasExternalId: !!userData.external_id,
         hasName: !!(userData.fn && userData.ln),
         hasLocation: !!(userData.ct || userData.st),
+        totalValue: totalValue,
+        productsWithCorrectValues: contents.length,
         expectedQuality: '6-7/10 (vs 4.6/10 anterior)'
       });
       
@@ -180,7 +216,12 @@ exports.handler = async (event, context) => {
               value: totalValue,
               currency: 'BRL',
               products_count: contents.length,
-              order_id: externalId
+              order_id: externalId,
+              products_processed: contents.map(item => ({
+                id: item.id,
+                price: item.item_price,
+                quantity: item.quantity
+              }))
             },
             quality_improvements: {
               ip_included: !!userData.client_ip_address,
@@ -189,6 +230,7 @@ exports.handler = async (event, context) => {
               fbp_included: !!userData.fbp,
               external_id_included: !!userData.external_id,
               name_included: !!(userData.fn && userData.ln),
+              correct_values_applied: true,
               expected_quality_score: '6-7/10'
             },
             timestamp: new Date().toISOString()
