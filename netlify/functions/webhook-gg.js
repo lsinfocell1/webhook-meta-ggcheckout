@@ -14,14 +14,10 @@ exports.handler = async (event, context) => {
   const PIXEL_ID = '1200923827459530';
   const ACCESS_TOKEN = 'EAALM996YCYEBP1QguFuDKZCmyBCI8RSeAQIoQvxoSLqpFcCII8RxIbcDpRhZCXBMqWMh6zLCae5YrAYM3yU0tU8OtGGhXkL1GbYprxPNT2uepiYeVSeSoCCheeIZAqS6E3ZB6MRr7P8wgMzSxK2Pjh6ZC3C8ZBBe8Gya87DQxbftW0Cj7rEIEo9p4XY1gn4YnZC8QZDZD';
   
-  // 🚀 CONFIGURAÇÃO DOS VALORES DOS PRODUTOS
-  const produtoValores = {
-    'PLAYLIST ATUALIZADA': 9.90,
-    'MÚSICAS E CLIPES': 9.90,
-    'CD ATUALIZADO SETEMBRO': 14.90,
-    'PACOTE COMPLETO SETEMBRO COM DESCONTO': 14.90,
-    'PACOTE COMPLETO ATUALIZADO SETEMBRO': 19.90
-    // PEN DRIVE não incluído (não vai para Meta)
+  // 🚀 Mapeamento de IDs para referência nos logs (OPCIONAL - só para facilitar debug)
+  const productIdReference = {
+    '8YKKoJQm474154JOFONX': 'PLAYLIST ATUALIZADA OUTUBRO 2025',
+    'gGzJ7TRkfndUBm2RV1MN': 'MÚSICAS E CLIPES'
   };
   
   try {
@@ -71,61 +67,69 @@ exports.handler = async (event, context) => {
         ? crypto.createHash('sha256').update(cleanPhone).digest('hex')
         : null;
 
-      // 🚀 MELHORIA 1: Tentar capturar FBC/FBP de diferentes fontes
-      let fbc = data.tracking?.fbc || data.utm?.fbc || data.custom_fields?.fbclid || null;
-      let fbp = data.tracking?.fbp || data.utm?.fbp || data.custom_fields?.fbp || null;
+      // Tentar capturar FBC/FBP de diferentes fontes
+      let fbc = data.tracking?.fbc || data.utm?.fbc || data.params?.fbclid || data.custom_fields?.fbclid || null;
+      let fbp = data.tracking?.fbp || data.utm?.fbp || data.params?.fbp || data.custom_fields?.fbp || null;
       
-      // 🚀 MELHORIA 2: Se não tem fbc, gerar um baseado no checkout_id (fallback)
-      if (!fbc && data.checkout_id) {
-        fbc = `fb.1.${eventTime}.generated_${data.checkout_id}`;
+      // Se não tem fbc, gerar um baseado no checkout_id (fallback)
+      if (!fbc && (data.checkout_id || data.payment?.id)) {
+        const fallbackId = data.checkout_id || data.payment?.id;
+        fbc = `fb.1.${eventTime}.generated_${fallbackId}`;
         console.log('🔧 FBC gerado como fallback:', fbc);
       }
       
-      // 🚀 MELHORIA 3: Adicionar external_id único para cada compra
+      // External_id único para cada compra
       const externalId = data.payment?.id || data.checkout_id || `purchase_${eventTime}`;
       
-      // 🚀 NOVA FUNCIONALIDADE: Preparar produtos com valores corretos
+      // 🚀 LÓGICA DINÂMICA: Usar valor REAL do pagamento
       const products = data.products || [];
       let contents;
       let totalValue;
+      let productName = 'Produto via WhatsApp';
       
-      if (products.length > 0) {
-        // Processar múltiplos produtos
+      if (products.length > 0 && products[0].id) {
+        // Múltiplos produtos OU produto único com ID
+        const realValue = parseFloat(data.payment?.amount) || 0;
+        const pricePerProduct = realValue / products.length;
+        
         contents = products.map(product => {
-          const productName = product.name || product.title || 'unknown';
-          const valorCorreto = produtoValores[productName];
+          const prodId = product.id?.toString() || 'unknown';
+          const prodName = productIdReference[prodId] || `Produto ${prodId.substring(0, 8)}`;
           
-          console.log(`📦 Produto: ${productName} - Valor original: ${product.price} - Valor correto: ${valorCorreto}`);
+          console.log(`📦 Produto: ${prodName} (ID: ${prodId}) - Valor unitário: R$ ${pricePerProduct.toFixed(2)}`);
           
           return {
-            id: product.id?.toString() || 'unknown',
-            quantity: parseInt(product.quantity) || 1,
-            item_price: valorCorreto || parseFloat(product.price) || 0
+            id: prodId,
+            quantity: 1,
+            item_price: pricePerProduct
           };
         });
         
-        // Calcular valor total baseado nos valores corretos
-        totalValue = contents.reduce((sum, item) => sum + (item.item_price * item.quantity), 0);
+        totalValue = realValue;
+        productName = productIdReference[products[0].id] || 'Produto via WhatsApp';
         
       } else {
-        // Produto único - tentar identificar pelo nome ou usar valor padrão
-        const productName = data.product?.name || data.product?.title || 'unknown';
-        const valorCorreto = produtoValores[productName];
-        
-        console.log(`📦 Produto único: ${productName} - Valor original: ${data.payment?.amount} - Valor correto: ${valorCorreto}`);
+        // Fallback: usar valor do pagamento
+        const realValue = parseFloat(data.payment?.amount) || parseFloat(data.total) || 0;
         
         contents = [{
           id: data.product?.id?.toString() || 'single_product',
           quantity: 1,
-          item_price: valorCorreto || parseFloat(data.payment?.amount) || parseFloat(data.total) || 0
+          item_price: realValue
         }];
         
-        totalValue = contents[0].item_price;
+        totalValue = realValue;
+        
+        if (data.product?.id && productIdReference[data.product.id]) {
+          productName = productIdReference[data.product.id];
+        }
+        
+        console.log(`📦 Produto único - Valor real: R$ ${realValue.toFixed(2)}`);
       }
       
-      console.log(`💰 Valor total calculado: ${totalValue} (produtos: ${contents.length})`);
+      console.log(`💰 Valor total enviado para Meta: R$ ${totalValue.toFixed(2)}`);
       
-      // 🚀 MELHORIA 4: userData otimizado com todos os campos possíveis
+      // UserData otimizado
       const userData = {
         ...(hashedEmail && { em: [hashedEmail] }),
         ...(hashedPhone && { ph: [hashedPhone] }),
@@ -133,14 +137,11 @@ exports.handler = async (event, context) => {
         ...(userAgent !== 'unknown' && { client_user_agent: userAgent }),
         ...(fbc && { fbc: fbc }),
         ...(fbp && { fbp: fbp }),
-        // Adicionar external_id para melhor rastreamento
         external_id: [crypto.createHash('sha256').update(externalId).digest('hex')],
-        // Adicionar nome se disponível
         ...(customer.name && { 
           fn: [crypto.createHash('sha256').update(customer.name.split(' ')[0].toLowerCase().trim()).digest('hex')],
           ln: [crypto.createHash('sha256').update((customer.name.split(' ').slice(-1)[0] || '').toLowerCase().trim()).digest('hex')]
         }),
-        // 🚀 MELHORIA 5: Adicionar cidade/estado se disponível
         ...(customer.city && { 
           ct: [crypto.createHash('sha256').update(customer.city.toLowerCase().trim()).digest('hex')]
         }),
@@ -149,34 +150,29 @@ exports.handler = async (event, context) => {
         })
       };
 
-      // 🚀 MELHORIA 6: Evento Purchase com test_event_code para debug
+      // Evento Purchase
       const purchaseEvent = {
         data: [{
           event_name: 'Purchase',
           event_time: eventTime,
           action_source: 'website',
-          event_source_url: data.checkout_url || `https://checkout.perfectpay.com.br/v2/${data.checkout_id || 'unknown'}`,
+          event_source_url: data.checkout_url || `https://checkout.ggcheckout.com/${data.checkout_id || 'unknown'}`,
           user_data: userData,
           custom_data: {
             currency: 'BRL',
-            value: parseFloat(totalValue),
+            value: parseFloat(totalValue.toFixed(2)),
             contents: contents,
             content_type: 'product',
             num_items: contents.length,
-            content_name: products.length > 0 ? products[0].name : 'Produto via WhatsApp',
-            // Adicionar order_id único
-            order_id: externalId,
-            ...(products.length > 0 && products[0].category && {
-              content_category: products[0].category
-            })
+            content_name: productName,
+            order_id: externalId
           }
         }],
-        // 🚀 MELHORIA 7: test_event_code para monitorar em tempo real
-        test_event_code: 'TEST12345' // Remover em produção
+        test_event_code: 'TEST12345' // REMOVER EM PRODUÇÃO
       };
       
-      console.log('🎯 Enviando evento MELHORADO para Meta:', JSON.stringify(purchaseEvent, null, 2));
-      console.log('📊 Parâmetros de qualidade incluídos:', {
+      console.log('🎯 Enviando evento para Meta:', JSON.stringify(purchaseEvent, null, 2));
+      console.log('📊 Parâmetros de qualidade:', {
         hasIP: !!userData.client_ip_address,
         hasUserAgent: !!userData.client_user_agent,
         hasFBC: !!userData.fbc,
@@ -185,10 +181,8 @@ exports.handler = async (event, context) => {
         hasPhone: !!userData.ph,
         hasExternalId: !!userData.external_id,
         hasName: !!(userData.fn && userData.ln),
-        hasLocation: !!(userData.ct || userData.st),
-        totalValue: totalValue,
-        productsWithCorrectValues: contents.length,
-        expectedQuality: '6-7/10 (vs 4.6/10 anterior)'
+        totalValue: `R$ ${totalValue.toFixed(2)}`,
+        expectedQuality: '4-5/10 (WhatsApp direto sem FBC/FBP real)'
       });
       
       const response = await fetch(`https://graph.facebook.com/v18.0/${PIXEL_ID}/events`, {
@@ -205,12 +199,12 @@ exports.handler = async (event, context) => {
       const result = await response.json();
       
       if (response.ok) {
-        console.log('✅ Evento enviado com sucesso - Qualidade melhorada!', result);
+        console.log('✅ Evento enviado com sucesso!', result);
         return {
           statusCode: 200,
           body: JSON.stringify({
             success: true,
-            message: 'Purchase event enviado com QUALIDADE MELHORADA para o Meta',
+            message: 'Purchase event enviado para o Meta com VALORES DINÂMICOS',
             meta_response: result,
             event_data: {
               value: totalValue,
@@ -223,15 +217,15 @@ exports.handler = async (event, context) => {
                 quantity: item.quantity
               }))
             },
-            quality_improvements: {
+            quality_score: {
               ip_included: !!userData.client_ip_address,
               user_agent_included: !!userData.client_user_agent,
               fbc_included: !!userData.fbc,
               fbp_included: !!userData.fbp,
               external_id_included: !!userData.external_id,
               name_included: !!(userData.fn && userData.ln),
-              correct_values_applied: true,
-              expected_quality_score: '6-7/10'
+              dynamic_values: true,
+              expected_quality_score: '4-5/10'
             },
             timestamp: new Date().toISOString()
           })
