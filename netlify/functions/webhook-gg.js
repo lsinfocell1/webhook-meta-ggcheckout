@@ -14,7 +14,7 @@ exports.handler = async (event, context) => {
   const PIXEL_ID = '1200923827459530';
   const ACCESS_TOKEN = 'EAA9DJQFrmiYBP4wKActUSZC7SQ4Pj5whR6linmZBv4wU0g6lqWZB1mXAANBXqxm3N93voMEs7eob1UClhh9Frn3YUWlCn0ZAq78zUUTMNLtpHmj8jyiB8LGYnyN0euehAk1RIsZALiJaTYyyh6IYQwJCZAbkVdNumKi5ormWjs1ypVOMa0XWQEvzCum2L7WFRx1QZDZD';
   
-  // 🚀 Mapeamento de IDs para referência nos logs (OPCIONAL - só para facilitar debug)
+  // Mapeamento de IDs para referência nos logs
   const productIdReference = {
     '8YKKoJQm474154JOFONX': 'PLAYLIST ATUALIZADA OUTUBRO 2025',
     'gGzJ7TRkfndUBm2RV1MN': 'MÚSICAS E CLIPES'
@@ -67,7 +67,7 @@ exports.handler = async (event, context) => {
         ? crypto.createHash('sha256').update(cleanPhone).digest('hex')
         : null;
 
-      // Tentar capturar FBC/FBP de diferentes fontes
+      // Capturar FBC/FBP de diferentes fontes
       let fbc = data.tracking?.fbc || data.utm?.fbc || data.params?.fbclid || data.custom_fields?.fbclid || null;
       let fbp = data.tracking?.fbp || data.utm?.fbp || data.params?.fbp || data.custom_fields?.fbp || null;
       
@@ -81,7 +81,7 @@ exports.handler = async (event, context) => {
       // External_id único para cada compra
       const externalId = data.payment?.id || data.checkout_id || `purchase_${eventTime}`;
       
-      // 🚀 LÓGICA DINÂMICA: Usar valor REAL do pagamento
+      // Lógica dinâmica: Usar valor REAL do pagamento
       const products = data.products || [];
       let contents;
       let totalValue;
@@ -150,7 +150,7 @@ exports.handler = async (event, context) => {
         })
       };
 
-      // Evento Purchase
+      // Evento Purchase para produção
       const purchaseEvent = {
         data: [{
           event_name: 'Purchase',
@@ -167,8 +167,7 @@ exports.handler = async (event, context) => {
             content_name: productName,
             order_id: externalId
           }
-        }],
-        test_event_code: 'TEST12345' // REMOVER EM PRODUÇÃO
+        }]
       };
       
       console.log('🎯 Enviando evento para Meta:', JSON.stringify(purchaseEvent, null, 2));
@@ -181,11 +180,10 @@ exports.handler = async (event, context) => {
         hasPhone: !!userData.ph,
         hasExternalId: !!userData.external_id,
         hasName: !!(userData.fn && userData.ln),
-        totalValue: `R$ ${totalValue.toFixed(2)}`,
-        expectedQuality: '4-5/10 (WhatsApp direto sem FBC/FBP real)'
+        totalValue: `R$ ${totalValue.toFixed(2)}`
       });
       
-      const response = await fetch(`https://graph.facebook.com/v18.0/${PIXEL_ID}/events`, {
+      const response = await fetch(`https://graph.facebook.com/v24.0/${PIXEL_ID}/events`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -204,7 +202,7 @@ exports.handler = async (event, context) => {
           statusCode: 200,
           body: JSON.stringify({
             success: true,
-            message: 'Purchase event enviado para o Meta com VALORES DINÂMICOS',
+            message: 'Purchase event enviado para o Meta',
             meta_response: result,
             event_data: {
               value: totalValue,
@@ -224,8 +222,7 @@ exports.handler = async (event, context) => {
               fbp_included: !!userData.fbp,
               external_id_included: !!userData.external_id,
               name_included: !!(userData.fn && userData.ln),
-              dynamic_values: true,
-              expected_quality_score: '4-5/10'
+              dynamic_values: true
             },
             timestamp: new Date().toISOString()
           })
