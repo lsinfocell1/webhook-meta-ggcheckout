@@ -12,7 +12,7 @@ exports.handler = async (event, context) => {
   });
 
   const PIXEL_ID = '1200923827459530';
-  const ACCESS_TOKEN = 'EAALM996YCYEBP0hlH3bV9kAF7ZALMYDy3hZBqG1P9MJEnsTO28vkFNia0YcAPAWhSNY19S4o5YAPg9IuZAnfQpy5HlfrTCw0FZCzm1IFx79uIHDVAdZAFMsyEg7vPmNm8Xpy4GMc6oyXkoI1EPhqaoXGsCa09VHYIvnkpDgKSvnyuxk0bBvTHKu1MCHpx2t7CU7BZAVZCwuuKrcwvNuycwGpqheJMaoph4mvxJd';
+  const ACCESS_TOKEN = 'EAA9DJQFrmiYBPZCR9RrZCZA7LEkv81D7xp2komZCj5pp0UkkSXWsN3xan8gSE5czmAzLIoWzQjrOqjiz1fxVMrFq0xVSKIgMmqLyElHG7ofbx6j2m20SrB4rFDY1nZAR87cZB7RMksDOR8krquySQ7GNZCGbC2gf67TYkWjlifJJQod0VDEZB4PxiDWyraNk3yUXXQwMhQwZD';
   
   // 🚀 Mapeamento de IDs para referência nos logs (OPCIONAL - só para facilitar debug)
   const productIdReference = {
