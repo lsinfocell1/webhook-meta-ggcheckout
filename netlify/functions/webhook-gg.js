@@ -1,5 +1,4 @@
 const crypto = require('crypto');
-const fetch = require("node-fetch");
 
 exports.handler = async (event, context) => {
   const clientIP = event.headers['x-forwarded-for'] || event.headers['x-real-ip'] || 'unknown';
