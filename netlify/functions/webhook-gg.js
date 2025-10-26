@@ -66,16 +66,36 @@ exports.handler = async (event, context) => {
         ? crypto.createHash('sha256').update(cleanPhone).digest('hex')
         : null;
 
-      // Capturar FBC/FBP de diferentes fontes
-      let fbc = data.tracking?.fbc || data.utm?.fbc || data.params?.fbclid || data.custom_fields?.fbclid || null;
-      let fbp = data.tracking?.fbp || data.utm?.fbp || data.params?.fbp || data.custom_fields?.fbp || null;
+      // ✅ CAPTURA CORRETA DE FBC/FBP - SEM MODIFICAÇÕES
+      let fbc = null;
+      let fbp = null;
       
-      // Se não tem fbc, gerar um baseado no checkout_id (fallback)
-      if (!fbc && (data.checkout_id || data.payment?.id)) {
-        const fallbackId = data.checkout_id || data.payment?.id;
-        fbc = `fb.1.${eventTime}.generated_${fallbackId}`;
-        console.log('🔧 FBC gerado como fallback:', fbc);
+      // Tentar pegar FBC diretamente (já formatado corretamente pela fonte)
+      fbc = data.tracking?.fbc || 
+            data.utm?.fbc || 
+            data.params?.fbc || 
+            data.custom_fields?.fbc || 
+            null;
+      
+      if (fbc) {
+        console.log('✅ FBC capturado (original):', fbc);
+      } else {
+        console.log('⚠️ FBC não encontrado - Evento sem atribuição direta');
       }
+      
+      // Pegar FBP
+      fbp = data.tracking?.fbp || 
+            data.utm?.fbp || 
+            data.params?.fbp || 
+            data.custom_fields?.fbp || 
+            null;
+      
+      if (fbp) {
+        console.log('✅ FBP capturado:', fbp);
+      }
+      
+      // ❌ NÃO GERAR FBC ARTIFICIAL - DEIXAR NULO SE NÃO EXISTIR
+      // O Facebook prefere eventos sem FBC do que com FBC falso/modificado
       
       // External_id único para cada compra
       const externalId = data.payment?.id || data.checkout_id || `purchase_${eventTime}`;
@@ -87,7 +107,6 @@ exports.handler = async (event, context) => {
       let productName = 'Produto via WhatsApp';
       
       if (products.length > 0 && products[0].id) {
-        // Múltiplos produtos OU produto único com ID
         const realValue = parseFloat(data.payment?.amount) || 0;
         const pricePerProduct = realValue / products.length;
         
@@ -108,7 +127,6 @@ exports.handler = async (event, context) => {
         productName = productIdReference[products[0].id] || 'Produto via WhatsApp';
         
       } else {
-        // Fallback: usar valor do pagamento
         const realValue = parseFloat(data.payment?.amount) || parseFloat(data.total) || 0;
         
         contents = [{
@@ -128,15 +146,16 @@ exports.handler = async (event, context) => {
       
       console.log(`💰 Valor total enviado para Meta: R$ ${totalValue.toFixed(2)}`);
       
-      // UserData otimizado
+      // ✅ UserData - SÓ INCLUI FBC/FBP SE REALMENTE EXISTIREM
       const userData = {
         ...(hashedEmail && { em: [hashedEmail] }),
         ...(hashedPhone && { ph: [hashedPhone] }),
         ...(clientIP !== 'unknown' && { client_ip_address: clientIP }),
         ...(userAgent !== 'unknown' && { client_user_agent: userAgent }),
-        ...(fbc && { fbc: fbc }),
-        ...(fbp && { fbp: fbp }),
+        ...(fbc && { fbc: fbc }), // ✅ Só envia se existir ORIGINAL
+        ...(fbp && { fbp: fbp }), // ✅ Só envia se existir ORIGINAL
         external_id: [crypto.createHash('sha256').update(externalId).digest('hex')],
+        country: [crypto.createHash('sha256').update('br').digest('hex')], // ✅ País fixo BR (hasheado)
         ...(customer.name && { 
           fn: [crypto.createHash('sha256').update(customer.name.split(' ')[0].toLowerCase().trim()).digest('hex')],
           ln: [crypto.createHash('sha256').update((customer.name.split(' ').slice(-1)[0] || '').toLowerCase().trim()).digest('hex')]
@@ -149,7 +168,7 @@ exports.handler = async (event, context) => {
         })
       };
 
-      // Evento Purchase para produção
+      // Evento Purchase
       const purchaseEvent = {
         data: [{
           event_name: 'Purchase',
@@ -174,6 +193,7 @@ exports.handler = async (event, context) => {
         hasIP: !!userData.client_ip_address,
         hasUserAgent: !!userData.client_user_agent,
         hasFBC: !!userData.fbc,
+        fbcValue: userData.fbc || 'NENHUM (normal para WhatsApp)',
         hasFBP: !!userData.fbp,
         hasEmail: !!userData.em,
         hasPhone: !!userData.ph,
@@ -208,6 +228,7 @@ exports.handler = async (event, context) => {
               currency: 'BRL',
               products_count: contents.length,
               order_id: externalId,
+              fbc_used: userData.fbc || 'none',
               products_processed: contents.map(item => ({
                 id: item.id,
                 price: item.item_price,
