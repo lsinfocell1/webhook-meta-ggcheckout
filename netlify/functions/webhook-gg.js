@@ -7,8 +7,8 @@ const ACCESS_TOKEN = 'EAAM0U1tQMm8BSPmb6yTJ5ddd6zS6pfGe8VDZCahGASYNFU5nnVWGP1w30
 // Atualize com os IDs reais que a GGCheckout está usando pro funil de músicas atual.
 // Se um ID não estiver aqui, o código já cai num fallback automático (Produto <primeiros 8 chars do ID>).
 const productIdReference = {
-  '1iRMzHD4vdfuL0u75eK4': 'PLAYLIST ATUALIZADA AGOSTO 2026',
-  'U9IyvzXNJsKq2MCvFmR4': 'ATUALIZAÇÃO AGOSTO 2026 - PACK COMPLETO',
+  '8YKKoJQm474154JOFONX': 'PLAYLIST ATUALIZADA 14,90',
+  'gGzJ7TRkfndUBm2RV1MN': 'MÚSICAS E CLIPES',
 };
 
 exports.handler = async (event, context) => {
