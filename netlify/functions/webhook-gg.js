@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 
-const PIXEL_ID = '954426653914535';
-const ACCESS_TOKEN = 'EAAM0U1tQMm8BSPmb6yTJ5ddd6zS6pfGe8VDZCahGASYNFU5nnVWGP1w30AXoTlI6ZCinLDSXLgTrfJt6GAqxmoeHvd0P3HAHh94WlMkZBUFFX3pQdmZCSUmG9C2ujVMBaG3ykj8pG5OjSeZAeMRXakDmgzOmJBwK3Vs3ZCiVsNRZA193SPZCZAcLxWU1rAgZBL1tjvGQZDZD';
+const PIXEL_ID = '1787982735449338';
+const ACCESS_TOKEN = 'EAAZAZCWlZCVcZBoBSjlDk3JT4ZCdjLkBXIOzNZBzzCBXLV1x5bFaYnmZA6J2wrJtF0tNi3bRyzW0Xt6iBHZA9KZBPOwbgKDSXEJZCNf7YPfZBkepFdelBgAYTnL1FbJKI124Ke9faVIFdNm7AHGwQ7t6w8jB0lRYuTSEGMjNgnZCQ8gctpJ7mTG8qBoO2XvizONRmAZDZD';
 
 // Mapeamento de IDs de produto -> nome (pra log e content_name).
 // Atualize com os IDs reais que a GGCheckout está usando pro funil de músicas atual.
